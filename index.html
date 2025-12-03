@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Serverless Expense Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen text-gray-800">
+
+    <div class="max-w-2xl mx-auto p-6">
+        <header class="mb-8 text-center">
+            <h1 class="text-3xl font-bold text-indigo-600">Expense Tracker</h1>
+            <p class="text-gray-500 mt-2">Serverless Vercel App</p>
+        </header>
+
+        <!-- Form Section -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+            <h2 class="text-xl font-semibold mb-4">Add New Expense</h2>
+            <form id="expenseForm" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Description</label>
+                    <input type="text" id="description" required
+                        class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Amount ($)</label>
+                        <input type="number" step="0.01" id="amount" required
+                            class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Date</label>
+                        <input type="date" id="date"
+                            class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                    </div>
+                </div>
+                <button type="submit" 
+                    class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">
+                    Add Expense
+                </button>
+            </form>
+        </div>
+
+        <!-- List Section -->
+        <div class="bg-white shadow-md rounded-lg overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                <h2 class="text-xl font-semibold">History</h2>
+                <span id="totalAmount" class="text-sm font-bold bg-green-100 text-green-800 py-1 px-3 rounded-full">Total: $0.00</span>
+            </div>
+            <ul id="expenseList" class="divide-y divide-gray-200">
+                <!-- Items will be injected here -->
+                <li class="p-6 text-center text-gray-500">Loading expenses...</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = '/api/expenses';
+        const form = document.getElementById('expenseForm');
+        const list = document.getElementById('expenseList');
+        const totalDisplay = document.getElementById('totalAmount');
+
+        // Fetch and display expenses
+        async function fetchExpenses() {
+            try {
+                const res = await fetch(API_URL);
+                if (!res.ok) throw new Error('API not available');
+                const data = await res.json();
+                renderExpenses(data);
+            } catch (err) {
+                console.error(err);
+                list.innerHTML = `
+                    <li class="p-6 text-center text-red-500 bg-red-50">
+                        <p class="font-bold">Cannot connect to API.</p>
+                        <p class="text-sm mt-1">If running locally, ensure "vercel dev" is running.</p>
+                        <p class="text-sm">If viewing this file directly in browser, the API path won't resolve.</p>
+                    </li>`;
+            }
+        }
+
+        // Render the list
+        function renderExpenses(expenses) {
+            list.innerHTML = '';
+            let total = 0;
+
+            if (expenses.length === 0) {
+                list.innerHTML = '<li class="p-6 text-center text-gray-400">No expenses recorded yet.</li>';
+                totalDisplay.textContent = 'Total: $0.00';
+                return;
+            }
+
+            expenses.slice().reverse().forEach(expense => {
+                total += parseFloat(expense.amount);
+                const li = document.createElement('li');
+                li.className = 'px-6 py-4 hover:bg-gray-50 transition-colors flex justify-between items-center';
+                li.innerHTML = `
+                    <div>
+                        <p class="font-medium text-gray-900">${escapeHtml(expense.description)}</p>
+                        <p class="text-sm text-gray-500">${expense.date}</p>
+                    </div>
+                    <span class="text-lg font-semibold text-gray-900">-$${parseFloat(expense.amount).toFixed(2)}</span>
+                `;
+                list.appendChild(li);
+            });
+
+            totalDisplay.textContent = `Total: $${total.toFixed(2)}`;
+        }
+
+        // Add new expense
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = form.querySelector('button');
+            const originalText = btn.textContent;
+            btn.textContent = 'Saving...';
+            btn.disabled = true;
+
+            const payload = {
+                description: document.getElementById('description').value,
+                amount: document.getElementById('amount').value,
+                date: document.getElementById('date').value
+            };
+
+            try {
+                const res = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (res.ok) {
+                    form.reset();
+                    fetchExpenses(); // Refresh list
+                } else {
+                    alert('Error saving expense');
+                }
+            } catch (err) {
+                alert('Network error');
+            } finally {
+                btn.textContent = originalText;
+                btn.disabled = false;
+            }
+        });
+
+        // Utility to prevent XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Initial Load
+        fetchExpenses();
+    </script>
+</body>
+</html>
